@@ -1,0 +1,255 @@
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <vector>
+#include <map>
+#include <set>
+#include <memory>
+#include <cctype>
+using namespace std;
+
+struct Node {
+    string value;
+    shared_ptr<Node> left, right;
+
+    Node(string v) : value(v) {}
+    Node(string v, shared_ptr<Node> l, shared_ptr<Node> r)
+        : value(v), left(l), right(r) {}
+};
+
+using Ptr = shared_ptr<Node>;
+
+class Parser {
+    string s;
+    int pos = 0;
+
+    void spaces() {
+        while (pos < (int)s.size() && isspace(s[pos]))
+            pos++;
+    }
+
+    Ptr factor() {
+        spaces();
+
+        if (pos < (int)s.size() && s[pos] == '(') {
+            pos++;
+            Ptr n = expression();
+            spaces();
+            if (pos < (int)s.size() && s[pos] == ')')
+                pos++;
+            return n;
+        }
+
+        if (pos < (int)s.size() && s[pos] == '-') {
+            pos++;
+            return make_shared<Node>(
+                "neg", make_shared<Node>("0"), factor());
+        }
+
+        string token;
+
+        while (pos < (int)s.size() &&
+               (isalnum(s[pos]) || s[pos] == '_' ||
+                s[pos] == '.')) {
+            token += s[pos++];
+        }
+
+        if (token.empty())
+            return make_shared<Node>("0");
+
+        return make_shared<Node>(token);
+    }
+
+    Ptr term() {
+        Ptr n = factor();
+
+        while (true) {
+            spaces();
+            if (pos >= (int)s.size() ||
+                (s[pos] != '*' && s[pos] != '/'))
+                break;
+
+            string op(1, s[pos++]);
+            n = make_shared<Node>(op, n, factor());
+        }
+
+        return n;
+    }
+
+    Ptr expression() {
+        Ptr n = term();
+
+        while (true) {
+            spaces();
+            if (pos >= (int)s.size() ||
+                (s[pos] != '+' && s[pos] != '-'))
+                break;
+
+            string op(1, s[pos++]);
+            n = make_shared<Node>(op, n, term());
+        }
+
+        return n;
+    }
+
+public:
+    Parser(string input) : s(input) {}
+
+    Ptr parse() {
+        return expression();
+    }
+};
+
+string key(Ptr n) {
+    if (!n->left && !n->right)
+        return n->value;
+
+    return "(" + key(n->left) + n->value +
+           key(n->right) + ")";
+}
+
+void countExpressions(Ptr n, map<string, int>& count) {
+    if (!n) return;
+
+    if (n->left && n->right)
+        count[key(n)]++;
+
+    countExpressions(n->left, count);
+    countExpressions(n->right, count);
+}
+
+void getVariables(Ptr n, set<string>& vars) {
+    if (!n) return;
+
+    if (!n->left && !n->right &&
+        !isdigit(n->value[0]) &&
+        n->value != "0")
+        vars.insert(n->value);
+
+    getVariables(n->left, vars);
+    getVariables(n->right, vars);
+}
+
+class Optimizer {
+    map<string, int> count;
+    map<string, string> saved;
+    map<string, set<string>> dependencies;
+    vector<string> output;
+    int tempCount = 1;
+
+    string newTemp() {
+        return "temp" + to_string(tempCount++);
+    }
+
+    void invalidate(string variable) {
+        for (auto it = saved.begin(); it != saved.end();) {
+            if (dependencies[it->first].count(variable))
+                it = saved.erase(it);
+            else
+                ++it;
+        }
+    }
+
+    string optimize(Ptr n) {
+        if (!n->left && !n->right)
+            return n->value;
+
+        string k = key(n);
+
+        if (count[k] > 1 && saved.count(k))
+            return saved[k];
+
+        string left = optimize(n->left);
+        string right = optimize(n->right);
+        string expr = left + " " + n->value + " " + right;
+
+        if (count[k] > 1) {
+            string temp = newTemp();
+            output.push_back(temp + " = " + expr);
+            saved[k] = temp;
+
+            set<string> vars;
+            getVariables(n, vars);
+            dependencies[k] = vars;
+
+            return temp;
+        }
+
+        return expr;
+    }
+
+public:
+    void run(vector<pair<string, Ptr>>& statements) {
+        for (auto& st : statements)
+            countExpressions(st.second, count);
+
+        for (auto& st : statements) {
+            string result = optimize(st.second);
+            output.push_back(st.first + " = " + result);
+            invalidate(st.first);
+        }
+
+        
+        ofstream fout("output.txt");
+        for (string line : output)
+            fout << line << '
+';
+    }
+};
+
+int main() {
+    ifstream fin("input.txt");
+
+    if (!fin) {
+        cout << "Cannot open input.txt
+";
+        return 1;
+    }
+
+    vector<pair<string, Ptr>> statements;
+    string line;
+
+    while (getline(fin, line)) {
+        size_t eq = line.find('=');
+
+        if (eq == string::npos)
+            continue;
+
+        string lhs = line.substr(0, eq);
+        string rhs = line.substr(eq + 1);
+
+        while (!lhs.empty() && isspace(lhs.back()))
+            lhs.pop_back();
+
+        size_t start = lhs.find_first_not_of(" 	");
+        if (start == string::npos)
+            continue;
+
+        lhs = lhs.substr(start);
+
+        Parser parser(rhs);
+        statements.push_back({lhs, parser.parse()});
+    }
+
+    fin.close();
+
+    Optimizer optimizer;
+    optimizer.run(statements);
+
+    
+    cout << "
+Optimization completed. Check output.txt
+";
+    return 0;
+}
+
+
+g++ cse.cpp -o a.out
+./a.out
+
+input:
+a = b + c;
+d = b + c;
+e = a * d;
+f = b + c;
+g = a * d;

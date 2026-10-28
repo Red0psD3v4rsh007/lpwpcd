@@ -1,0 +1,192 @@
+
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <vector>
+#include <map>
+#include <set>
+#include <regex>
+#include <algorithm>
+using namespace std;
+
+struct Variable {
+    string name;
+    int start, end, reg;
+};
+
+int main() {
+    ifstream in("input.txt");
+    ofstream out("output.txt");
+
+    if (!in.is_open() || !out.is_open())
+        return 1;
+
+    vector<string> statements;
+    string line;
+
+    while (getline(in, line)) {
+        size_t comment = line.find("//");
+        if (comment != string::npos)
+            line = line.substr(0, comment);
+
+        if (line.find_first_not_of(" 	
+") != string::npos)
+            statements.push_back(line);
+    }
+
+    regex identifier("[a-zA-Z_][a-zA-Z0-9_]*");
+    regex assignment("^\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*=");
+
+    map<string, Variable> vars;
+
+    // Find variable definitions and uses.
+    for (int i = 0; i < (int)statements.size(); i++) {
+        string s = statements[i];
+        int pos = i + 1;
+        smatch match;
+        string lhs = "";
+
+        if (regex_search(s, match, assignment))
+            lhs = match[1];
+
+        if (lhs != "") {
+            if (!vars.count(lhs))
+                vars[lhs] = {lhs, pos, pos, 0};
+            else {
+                vars[lhs].start = min(vars[lhs].start, pos);
+                vars[lhs].end = max(vars[lhs].end, pos);
+            }
+        }
+
+        size_t eq = s.find('=');
+        string rhs = (lhs != "" && eq != string::npos)
+                         ? s.substr(eq + 1) : s;
+
+        for (sregex_iterator it(rhs.begin(), rhs.end(), identifier), last;
+             it != last; ++it) {
+            string name = it->str();
+
+            if (name == "return" || name == "if" ||
+                name == "else" || name == "while" ||
+                name == "for" || name == "true" ||
+                name == "false")
+                continue;
+
+            if (!vars.count(name))
+                vars[name] = {name, pos, pos, 0};
+            else
+                vars[name].end = max(vars[name].end, pos);
+        }
+    }
+
+    vector<Variable> v;
+    for (auto &p : vars)
+        v.push_back(p.second);
+
+    sort(v.begin(), v.end(), [](const Variable &a,
+                                const Variable &b) {
+        if (a.start != b.start)
+            return a.start < b.start;
+        return a.name < b.name;
+    });
+
+    out << "REGISTER ALLOCATION USING GRAPH COLORING
+";
+    out << "========================================
+
+";
+
+    out << "STATEMENTS:
+";
+    for (int i = 0; i < (int)statements.size(); i++)
+        out << i + 1 << ". " << statements[i] << '
+';
+
+    out << "
+LIVE RANGES:
+";
+    out << "Variable	Start	End
+";
+
+    for (const auto &x : v)
+        out << x.name << "		(" << x.start
+            << ", " << x.end << ")
+";
+
+    out << "
+INTERFERENCE GRAPH:
+";
+    out << "Variables with overlapping live ranges "
+           "cannot share a register.
+";
+
+    bool found = false;
+    for (int i = 0; i < (int)v.size(); i++) {
+        for (int j = i + 1; j < (int)v.size(); j++) {
+            if (max(v[i].start, v[j].start) <=
+                min(v[i].end, v[j].end)) {
+                out << v[i].name << " -- " << v[j].name << '
+';
+                found = true;
+            }
+        }
+    }
+
+    if (!found)
+        out << "No interference edges.
+";
+
+    // Color the interval graph.
+    vector<int> registerEnd;
+    for (auto &x : v) {
+        int r = 0;
+
+        while (r < (int)registerEnd.size() &&
+               registerEnd[r] >= x.start)
+            r++;
+
+        if (r == (int)registerEnd.size())
+            registerEnd.push_back(x.end);
+        else
+            registerEnd[r] = x.end;
+
+        x.reg = r + 1;
+    }
+
+    out << "
+REGISTER ALLOCATION:
+";
+    out << "Variable	Live Range	Register
+";
+
+    for (const auto &x : v)
+        out << x.name << "		(" << x.start << ", "
+            << x.end << ")	R" << x.reg << '
+';
+
+    out << "
+OPTIMIZATION RESULT:
+";
+    out << "Minimum registers required: "
+        << registerEnd.size() << '
+';
+
+    in.close();
+    out.close();
+
+    return 0;
+}
+
+
+
+g++ -std=c++17 register.cpp -o a.out
+./a.out
+
+
+input:
+a = 10;
+b = 20;
+c = a + b;
+d = c * 2;
+e = a + d;
+return e;

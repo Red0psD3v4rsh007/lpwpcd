@@ -1,0 +1,14 @@
+// Practical 2 Test Source Code
+if (count < 10) {
+    count = count + 1;
+} else {
+    /* Decrement logic
+       in this block */
+    count = count - 1;
+}
+
+while (count > 0) {
+    count = count - 1;
+    #  // Intentional error on line 12
+    @  // Intentional error on line 13
+}

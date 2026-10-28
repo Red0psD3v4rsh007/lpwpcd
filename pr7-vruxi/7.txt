@@ -1,0 +1,368 @@
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <vector>
+#include <sstream>
+#include <cctype>
+using namespace std;
+
+int nextLine = 100;
+int tempCount = 1;
+
+struct TAC {
+    int line;
+    string code;
+};
+
+vector<TAC> code;
+
+string trim(string s) {
+    int start = 0;
+    while (start < s.length() && isspace(s[start]))
+        start++;
+
+    int end = s.length() - 1;
+    while (end >= start && isspace(s[end]))
+        end--;
+
+    return s.substr(start, end - start + 1);
+}
+
+int newLine() {
+    return nextLine++;
+}
+
+string newTemp() {
+    return "t" + to_string(tempCount++);
+}
+
+void addCode(string statement) {
+    TAC t;
+    t.line = newLine();
+    t.code = statement;
+    code.push_back(t);
+}
+
+bool isOperator(char c) {
+    return c == '+' || c == '-' || c == '*' || c == '/';
+}
+
+string generateExpression(string expr) {
+    expr = trim(expr);
+
+    for (int i = 0; i < expr.length(); i++) {
+        if (isOperator(expr[i])) {
+            string left = trim(expr.substr(0, i));
+            string right = trim(expr.substr(i + 1));
+
+            string temp = newTemp();
+
+            addCode(temp + " = " + left + " " + expr[i] + " " + right);
+
+            return temp;
+        }
+    }
+
+    return expr;
+}
+
+void generateAssignment(string statement) {
+    statement = trim(statement);
+
+    if (statement.empty())
+        return;
+
+    if (statement.back() == ';')
+        statement.pop_back();
+
+    size_t equalPos = statement.find('=');
+
+    if (equalPos == string::npos)
+        return;
+
+    string left = trim(statement.substr(0, equalPos));
+    string right = trim(statement.substr(equalPos + 1));
+
+    string result = generateExpression(right);
+
+    addCode(left + " = " + result);
+}
+
+string getCondition(string statement) {
+    size_t start = statement.find('(');
+    size_t end = statement.rfind(')');
+
+    if (start != string::npos && end != string::npos)
+        return trim(statement.substr(start + 1, end - start - 1));
+
+    return "";
+}
+
+int findMatchingBrace(vector<string>& lines, int pos) {
+    int count = 0;
+
+    for (int i = pos; i < lines.size(); i++) {
+
+        if (lines[i] == "{")
+            count++;
+
+        if (lines[i] == "}") {
+            count--;
+
+            if (count == 0)
+                return i;
+        }
+    }
+
+    return lines.size() - 1;
+}
+
+void generateBlock(vector<string>& lines, int start, int end);
+
+void generateIf(vector<string>& lines, int& i) {
+
+    string condition = getCondition(lines[i]);
+
+    int ifLine = newLine();
+
+    code.push_back({ifLine, ""});
+
+    i++;
+
+    if (i < lines.size() && lines[i] == "{")
+        i++;
+
+    int blockStart = i;
+    int braceCount = 1;
+
+    while (i < lines.size() && braceCount > 0) {
+
+        if (lines[i] == "{")
+            braceCount++;
+
+        if (lines[i] == "}") {
+            braceCount--;
+
+            if (braceCount == 0)
+                break;
+        }
+
+        i++;
+    }
+
+    int blockEnd = i;
+
+    int gotoLine = newLine();
+    code.push_back({gotoLine, ""});
+
+    int trueStart = nextLine;
+
+    generateBlock(lines, blockStart, blockEnd);
+
+    int trueEnd = nextLine;
+
+    int afterIf = trueEnd;
+
+    if (i + 1 < lines.size() && lines[i + 1] == "else") {
+
+        i += 2;
+
+        if (i < lines.size() && lines[i] == "{")
+            i++;
+
+        int elseStart = i;
+        int brace = 1;
+
+        while (i < lines.size() && brace > 0) {
+
+            if (lines[i] == "{")
+                brace++;
+
+            if (lines[i] == "}") {
+                brace--;
+
+                if (brace == 0)
+                    break;
+            }
+
+            i++;
+        }
+
+        int elseEnd = i;
+
+        int gotoEndLine = newLine();
+        code.push_back({gotoEndLine, ""});
+
+        int falseStart = nextLine;
+
+        generateBlock(lines, elseStart, elseEnd);
+
+        int endLine = nextLine;
+
+        for (auto& x : code) {
+
+            if (x.line == ifLine)
+                x.code = "if (" + condition + ") goto " + to_string(trueStart);
+
+            if (x.line == gotoLine)
+                x.code = "goto " + to_string(falseStart);
+
+            if (x.line == gotoEndLine)
+                x.code = "goto " + to_string(endLine);
+        }
+    }
+    else {
+
+        for (auto& x : code) {
+
+            if (x.line == ifLine)
+                x.code = "if (" + condition + ") goto " + to_string(trueStart);
+
+            if (x.line == gotoLine)
+                x.code = "goto " + to_string(afterIf);
+        }
+    }
+}
+
+void generateWhile(vector<string>& lines, int& i) {
+
+    string condition = getCondition(lines[i]);
+
+    int conditionLine = nextLine;
+
+    int ifLine = newLine();
+    code.push_back({ifLine, ""});
+
+    int gotoLine = newLine();
+    code.push_back({gotoLine, ""});
+
+    i++;
+
+    if (i < lines.size() && lines[i] == "{")
+        i++;
+
+    int blockStart = i;
+    int brace = 1;
+
+    while (i < lines.size() && brace > 0) {
+
+        if (lines[i] == "{")
+            brace++;
+
+        if (lines[i] == "}") {
+            brace--;
+
+            if (brace == 0)
+                break;
+        }
+
+        i++;
+    }
+
+    int blockEnd = i;
+
+    int bodyStart = nextLine;
+
+    generateBlock(lines, blockStart, blockEnd);
+
+    int jumpBack = newLine();
+
+    code.push_back({
+        jumpBack,
+        "goto " + to_string(conditionLine)
+    });
+
+    int endLine = nextLine;
+
+    for (auto& x : code) {
+
+        if (x.line == ifLine)
+            x.code = "if (" + condition + ") goto " + to_string(bodyStart);
+
+        if (x.line == gotoLine)
+            x.code = "goto " + to_string(endLine);
+    }
+}
+
+void generateBlock(vector<string>& lines, int start, int end) {
+
+    int i = start;
+
+    while (i < end) {
+
+        string current = trim(lines[i]);
+
+        if (current.empty()) {
+            i++;
+            continue;
+        }
+
+        if (current.find("if") == 0) {
+            generateIf(lines, i);
+        }
+        else if (current.find("while") == 0) {
+            generateWhile(lines, i);
+        }
+        else if (current != "{") {
+            generateAssignment(current);
+        }
+
+        i++;
+    }
+}
+
+int main() {
+
+    ifstream input("input.txt");
+    ofstream output("output.txt");
+
+    if (!input) {
+        cout << "Error: input.txt not found." << endl;
+        return 1;
+    }
+
+    vector<string> lines;
+    string line;
+
+    while (getline(input, line)) {
+
+        line = trim(line);
+
+        if (!line.empty())
+            lines.push_back(line);
+    }
+
+    generateBlock(lines, 0, lines.size());
+
+    for (TAC t : code)
+        output << t.line << " " << t.code << endl;
+
+    input.close();
+    output.close();
+
+    cout << "Three Address Code generated successfully." << endl;
+    cout << "Output stored in output.txt" << endl;
+
+    return 0;
+}
+
+
+
+g++ tac.cpp -o a.out
+./a.out
+
+input:
+a = b + c;
+d = a * e;
+if (a > b)
+{
+    x = a + b;
+}
+else
+{
+    x = a - b;
+}
+while (x > 0)
+{
+    x = x - 1;
+}

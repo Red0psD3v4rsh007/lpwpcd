@@ -1,0 +1,251 @@
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <map>
+#include <set>
+#include <cctype>
+
+using namespace std;
+
+struct TAC {
+    string lhs;
+    string op1;
+    string op;
+    string op2;
+};
+
+map<string, string> location;
+set<string> usedRegisters;
+
+int totalRegisters = 4;
+
+bool isNumber(string s) {
+
+    if (s.empty())
+        return false;
+
+    int start = 0;
+
+    if (s[0] == '-')
+        start = 1;
+
+    if (start == s.length())
+        return false;
+
+    for (int i = start; i < s.length(); i++) {
+
+        if (!isdigit(s[i]))
+            return false;
+    }
+
+    return true;
+}
+
+string getReg(string variable) {
+
+    if (location.find(variable) != location.end())
+        return location[variable];
+
+    for (int i = 1; i <= totalRegisters; i++) {
+
+        string reg = "R" + to_string(i);
+
+        if (usedRegisters.find(reg) == usedRegisters.end()) {
+
+            location[variable] = reg;
+            usedRegisters.insert(reg);
+
+            return reg;
+        }
+    }
+
+    string reg = "R1";
+
+    for (auto it = location.begin(); it != location.end();) {
+
+        if (it->second == reg)
+            it = location.erase(it);
+        else
+            ++it;
+    }
+
+    location[variable] = reg;
+
+    return reg;
+}
+
+TAC parseLine(string line) {
+
+    TAC t;
+
+    string cleaned = "";
+
+    for (char c : line) {
+
+        if (!isspace(c))
+            cleaned += c;
+    }
+
+    size_t equalPos = cleaned.find('=');
+
+    if (equalPos == string::npos)
+        return t;
+
+    t.lhs = cleaned.substr(0, equalPos);
+
+    string expression = cleaned.substr(equalPos + 1);
+
+    char operators[] = {'+', '-', '*', '/', '%'};
+
+    for (char op : operators) {
+
+        size_t pos = expression.find(op);
+
+        if (pos != string::npos) {
+
+            t.op1 = expression.substr(0, pos);
+            t.op = string(1, op);
+            t.op2 = expression.substr(pos + 1);
+
+            return t;
+        }
+    }
+
+    t.op = "=";
+    t.op1 = expression;
+    t.op2 = "";
+
+    return t;
+}
+
+void generate(TAC t, ofstream& output) {
+
+    if (t.lhs.empty())
+        return;
+
+    if (t.op == "=") {
+
+        if (location.find(t.op1) != location.end()) {
+
+            output << "MOV "
+                   << t.lhs << " "
+                   << location[t.op1] << endl;
+        }
+        else {
+
+            output << "MOV "
+                   << t.lhs << " "
+                   << t.op1 << endl;
+        }
+
+        return;
+    }
+
+    string reg1;
+
+    if (location.find(t.op1) != location.end()) {
+
+        reg1 = location[t.op1];
+    }
+    else {
+
+        reg1 = getReg(t.op1);
+
+        output << "MOV "
+               << reg1 << " "
+               << t.op1 << endl;
+    }
+
+    string operand2;
+
+    if (location.find(t.op2) != location.end()) {
+
+        operand2 = location[t.op2];
+    }
+    else {
+
+        operand2 = t.op2;
+    }
+
+    if (t.op == "+") {
+
+        output << "ADD "
+               << reg1 << " "
+               << operand2 << endl;
+    }
+
+    else if (t.op == "-") {
+
+        output << "SUB "
+               << reg1 << " "
+               << operand2 << endl;
+    }
+
+    else if (t.op == "*") {
+
+        output << "MUL "
+               << reg1 << " "
+               << operand2 << endl;
+    }
+
+    else if (t.op == "/") {
+
+        output << "DIV "
+               << reg1 << " "
+               << operand2 << endl;
+    }
+
+    else if (t.op == "%") {
+
+        output << "MOD "
+               << reg1 << " "
+               << operand2 << endl;
+    }
+
+    location[t.lhs] = reg1;
+}
+
+int main() {
+
+    ifstream input("input.txt");
+    ofstream output("output.txt");
+
+    if (!input) {
+
+        cout << "Error: input.txt not found." << endl;
+
+        return 1;
+    }
+
+    string line;
+
+    while (getline(input, line)) {
+
+        if (line.empty())
+            continue;
+
+        TAC t = parseLine(line);
+
+        generate(t, output);
+    }
+
+    input.close();
+    output.close();
+
+    cout << "Target code generated successfully." << endl;
+    cout << "Check output.txt" << endl;
+
+    return 0;
+}
+
+
+g++ target.cpp -o a.out
+./a.out
+
+
+input:
+a = 10
+b = 20
+c = a + b
+d = c * 2
+e = d - a

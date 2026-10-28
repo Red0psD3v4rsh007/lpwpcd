@@ -1,0 +1,18 @@
+// Practical 3 Test Source Code with Data Types
+int global_count = 0;
+float temperature = 98.6;
+
+if (global_count < 10) {
+    int local_step = 1;
+    global_count = global_count + local_step;
+} else {
+    /* Decrement */
+    global_count = global_count - 1;
+}
+
+while (global_count > 0) {
+    global_count = global_count - 1;
+}
+
+// Test an undeclared variable
+undeclared_var = 100;
