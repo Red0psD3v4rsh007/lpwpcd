@@ -1,0 +1,7 @@
+# Office lock files
+.~lock.*#
+*.lock
+
+# Temporary/swap files
+*.swp
+*~

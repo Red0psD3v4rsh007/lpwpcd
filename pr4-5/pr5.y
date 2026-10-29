@@ -98,7 +98,7 @@ void yyerror(char *s)
     error_count++;
 }
 
-int main()b
+int main()
 {
     printf("Enter the program:\n");
 
